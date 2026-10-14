@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>HabitPro Max</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HabitPro">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
+    <style>
+        :root {
+            /* Vylepšená paleta barev pro Glassmorphism */
+            --bg-color: #050505; 
+            
+            /* Barvy skla */
+            --glass-bg: rgba(255, 255, 255, 0.03); 
+            --glass-bg-hover: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-border-light: rgba(255, 255, 255, 0.15);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            
+            /* Text */
+            --text-primary: #ffffff;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            
+            /* Akcenty */
+            --accent: #0a84ff;
+            --accent-glow: rgba(10, 132, 255, 0.3);
+            --success: #32d74b;
+            --danger: #ff453a;
+            
+            /* Heatmapa */
+            --hm-empty: rgba(255, 255, 255, 0.05);
+            --hm-l1: #4a3485; 
+            --hm-l2: #6545b7;
+            --hm-l3: #8a64ed;
+            --hm-l4: #b392ff; 
+            
+            /* Bezpečnostní zóny pro iOS */
+            --safe-bottom: env(safe-area-inset-bottom, 20px);
+            --safe-top: env(safe-area-inset-top, 47px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, sans-serif; -webkit-tap-highlight-color: transparent; user-select: none; }
+
+        body { 
+            background-color: var(--bg-color); 
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(10, 132, 255, 0.05), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(138, 100, 237, 0.05), transparent 25%);
+            color: var(--text-primary); 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: var(--glass-shadow);
+        }
+
+        header { 
+            padding: calc(var(--safe-top) + 10px) 24px 16px; 
+            background: linear-gradient(180deg, rgba(5,5,5,0.9) 0%, rgba(5,5,5,0) 100%);
+            z-index: 10;
+        }
+        header h1 { font-size: 38px; font-weight: 800; letter-spacing: -1.2px; background: linear-gradient(90deg, #fff, #a1a1aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header .date { color: var(--text-secondary); font-size: 13px; text-transform: uppercase; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 4px; }
+
+        main { flex: 1; overflow-y: auto; padding: 10px 24px calc(var(--safe-bottom) + 100px); scroll-behavior: smooth; }
+        main::-webkit-scrollbar { display: none; }
+        
+        .view { display: none; animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .habit-list { display: flex; flex-direction: column; gap: 16px; margin-top: 10px; }
+        .habit-card { 
+            padding: 20px; display: flex; align-items: center; justify-content: space-between; 
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; position: relative; overflow: hidden;
+        }
+        .habit-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .habit-card:active { transform: scale(0.97); background: var(--glass-bg-hover); border-color: var(--glass-border-light); }
+        
+        .habit-info { display: flex; align-items: center; gap: 18px; flex: 1; z-index: 1; }
+        .habit-icon-wrap { 
+            width: 56px; height: 56px; border-radius: 18px; display: flex; align-items: center; justify-content: center; 
+            font-size: 28px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); box-shadow: inset 0 2px 10px rgba(255,255,255,0.02);
+        }
+        
+        .habit-details h3 { font-size: 18px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.3px; }
+        .habit-details p { font-size: 14px; color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; gap: 8px;}
+        .streak-badge { 
+            background: rgba(255, 159, 10, 0.15); color: #ff9f0a; padding: 3px 8px; border-radius: 10px; 
+            font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 4px; border: 1px solid rgba(255, 159, 10, 0.2);
+        }
+
+        .progress-ring { width: 52px; height: 52px; position: relative; z-index: 1;}
+        .progress-ring svg { transform: rotate(-90deg); width: 100%; height: 100%; filter: drop-shadow(0 0 6px rgba(0,0,0,0.5));}
+        .progress-ring circle { fill: transparent; stroke-width: 4.5; stroke-linecap: round; }
+        .progress-ring .bg { stroke: rgba(255,255,255,0.08); }
+        .progress-ring .fg { transition: stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.3s; }
+        .progress-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 18px; transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        .section-title { font-size: 22px; font-weight: 700; margin: 35px 0 16px 0; letter-spacing: -0.5px; display: flex; align-items: center; justify-content: space-between;}
+        
+        .stats-grid-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+        .stat-card { padding: 24px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .stat-card h2 { font-size: 38px; font-weight: 800; margin-bottom: 4px; background: linear-gradient(135deg, #fff, #aaa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;}
+        .stat-card p { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; letter-spacing: 1px;}
+
+        .chart-wrapper { padding: 20px; height: 260px; width: 100%; position: relative; }
+
+        .heatmap-wrapper { padding: 24px 20px; overflow-x: auto; scrollbar-width: none; }
+        .heatmap-wrapper::-webkit-scrollbar { display: none; }
+        
+        .heatmap-scroll-container { display: flex; gap: 10px; }
+        
+        .hm-labels-y { display: grid; grid-template-rows: repeat(7, 14px); gap: 4px; margin-right: 8px; margin-top: 24px; }
+        .hm-labels-y span { font-size: 10px; color: var(--text-muted); line-height: 14px; }
+        
+        .hm-content { display: flex; flex-direction: column; gap: 6px; }
+        .hm-labels-x { display: flex; margin-bottom: 4px; position: relative; height: 14px; }
+        .hm-labels-x span { font-size: 11px; color: var(--text-muted); position: absolute; }
+        
+        .hm-grid { display: grid; grid-template-rows: repeat(7, 14px); grid-auto-flow: column; gap: 4px; }
+        .hm-cell { width: 14px; height: 14px; border-radius: 3px; background: var(--hm-empty); transition: all 0.3s ease; }
+        
+        .hm-cell.l1 { background: var(--hm-l1); }
+        .hm-cell.l2 { background: var(--hm-l2); }
+        .hm-cell.l3 { background: var(--hm-l3); }
+        .hm-cell.l4 { background: var(--hm-l4); box-shadow: 0 0 8px rgba(179, 146, 255, 0.4); }
+        
+        .hm-cell:hover { transform: scale(1.2); border: 1px solid rgba(255,255,255,0.5); z-index: 10; }
+        
+        .heatmap-legend { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 16px; font-size: 11px; color: var(--text-secondary); }
+        .legend-cell { width: 12px; height: 12px; border-radius: 3px; }
+
+        .settings-btn { 
+            width: 100%; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; 
+            font-size: 16px; font-weight: 500; color: var(--text-primary); border: none; cursor: pointer; margin-bottom: 12px; transition: all 0.2s;
+        }
+        .settings-btn:active { background: var(--glass-bg-hover); transform: scale(0.98); }
+        .settings-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.1); margin-right: 14px; }
+        .settings-btn-content { display: flex; align-items: center; }
+        
+        .danger-btn .settings-icon { background: rgba(255, 69, 58, 0.15); color: var(--danger); }
+        .danger-btn { color: var(--danger); }
+
+        nav { 
+            position: fixed; bottom: 0; width: 100%; height: calc(70px + var(--safe-bottom)); 
+            background: rgba(10, 10, 12, 0.75); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); 
+            border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-around; padding-bottom: var(--safe-bottom); z-index: 100; 
+        }
+        .nav-item { 
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            color: var(--text-muted); font-size: 11px; font-weight: 600; margin-top: 6px; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+        }
+        .nav-item.active { color: var(--text-primary); }
+        .nav-item svg { width: 28px; height: 28px; margin-bottom: 4px; fill: currentColor; transition: transform 0.3s; opacity: 0.7;}
+        .nav-item.active svg { transform: translateY(-2px) scale(1.1); fill: url(#activeGradient); opacity: 1;}
+
+        .overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); 
+            opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 999; 
+        }
+        .overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .bottom-sheet { 
+            position: fixed; bottom: -100%; left: 0; width: 100%; background: rgba(20, 20, 22, 0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 32px 32px 0 0; border-top: 1px solid rgba(255,255,255,0.1); padding: 24px 24px calc(var(--safe-bottom) + 24px); 
+            transition: bottom 0.5s cubic-bezier(0.32, 0.72, 0, 1); z-index: 1000; box-shadow: 0 -20px 60px rgba(0,0,0,0.5); 
+        }
+        .bottom-sheet.active { bottom: 0; }
+        
+        .sheet-handle { width: 48px; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; margin: 0 auto 24px; }
+        
+        .form-group { margin-bottom: 24px; }
+        .form-group label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .input-row { display: flex; gap: 12px; }
+        .input-box { 
+            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 16px 20px; border-radius: 16px; font-size: 17px; 
+            outline: none; transition: all 0.2s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .input-box:focus { border-color: rgba(255,255,255,0.3); background: rgba(0,0,0,0.5); }
+        
+        .color-picker { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap;}
+        .color-dot { 
+            width: 40px; height: 40px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); position: relative;
+        }
+        .color-dot::after {
+            content: ''; position: absolute; top: 2px; left: 2px; right: 2px; bottom: 2px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2);
+        }
+        .color-dot.selected { border-color: white; transform: scale(1.15); box-shadow: 0 0 15px currentColor; }
+
+        .btn-primary { 
+            width: 100%; background: linear-gradient(135deg, #0a84ff, #005bb5); color: white; border: none; padding: 18px; border-radius: 18px; 
+            font-size: 17px; font-weight: 700; letter-spacing: 0.5px; margin-top: 10px; cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 20px rgba(10, 132, 255, 0.3);
+        }
+        .btn-primary:active { transform: scale(0.98); box-shadow: 0 4px 10px rgba(10, 132, 255, 0.2); }
+
+        .custom-dialog {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(30, 30, 34, 0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; width: 300px; padding: 24px; text-align: center;
+            opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 2000; box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        }
+        .custom-dialog.active { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+        .custom-dialog h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+        .custom-dialog p { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.4;}
+        .dialog-btns { display: flex; gap: 12px; }
+        .dialog-btn { flex: 1; padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 600; border: none; cursor: pointer; }
+        .dialog-btn.cancel { background: rgba(255,255,255,0.1); color: white; }
+        .dialog-btn.confirm { background: var(--danger); color: white; }
+        .dialog-btn.confirm-blue { background: var(--accent); color: white; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <svg width="0" height="0" style="position: absolute;">
+        <defs>
+            <linearGradient id="activeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#32d74b" />
+                <stop offset="100%" stop-color="#0a84ff" />
+            </linearGradient>
+            <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="var(--accent)" />
+                <stop offset="100%" stop-color="#005bb5" />
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <header>
+        <div class="date" id="current-date">Načítání...</div>
+        <h1 id="header-title">Dnešek</h1>
+    </header>
+
+    <main id="view-today" class="view active">
+        <div class="habit-list" id="habits-container"></div>
+    </main>
+
+    <main id="view-stats" class="view">
+        <div class="stats-grid-top">
+            <div class="glass-panel stat-card">
+                <h2 id="stat-total">0</h2>
+                <p>Splněno</p>
+            </div>
+            <div class="glass-panel stat-card">
+                <h2 id="stat-perfect">0</h2>
+                <p>Top dny</p>
+            </div>
+        </div>
+
+        <h3 class="section-title">Konzistence <span style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Poslední rok</span></h3>
+        <div class="glass-panel heatmap-wrapper">
+            <div class="heatmap-scroll-container">
+                <div class="hm-labels-y">
+                    <span>Po</span><span></span><span>St</span><span></span><span>Pá</span><span></span><span>Ne</span>
+                </div>
+                <div class="hm-content">
+                    <div class="hm-labels-x" id="hm-months"></div>
+                    <div class="hm-grid" id="heatmap-grid"></div>
+                </div>
+            </div>
+            <div class="heatmap-legend">
+                <span>Méně</span>
+                <div class="legend-cell" style="background: var(--hm-empty);"></div>
+                <div class="legend-cell" style="background: var(--hm-l1);"></div>
+                <div class="legend-cell" style="background: var(--hm-l2);"></div>
+                <div class="legend-cell" style="background: var(--hm-l3);"></div>
+                <div class="legend-cell" style="background: var(--hm-l4);"></div>
+                <span>Více</span>
+            </div>
+        </div>
+
+        <h3 class="section-title">Aktivita <span style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">14 dnů</span></h3>
+        <div class="glass-panel chart-wrapper">
+            <canvas id="activityChart"></canvas>
+        </div>
+    </main>
+
+    <main id="view-settings" class="view">
+        
+        <h3 class="section-title" style="margin-top: 10px;">Správa návyků</h3>
+        <div class="glass-panel" style="padding: 10px; margin-bottom: 24px;">
+            <div id="settings-habit-list"></div>
+            <button class="settings-btn" onclick="UI.openSheet()" style="margin-bottom: 0;">
+                <div class="settings-btn-content">
+                    <div class="settings-icon" style="background: rgba(10, 132, 255, 0.15); color: var(--accent);">➕</div>
+                    <span>Přidat nový návyk</span>
+                </div>
+                <span style="color: var(--text-muted);">›</span>
+            </button>
+        </div>
+
+        <h3 class="section-title">Data a Záloha</h3>
+        <div class="glass-panel" style="padding: 10px;">
+            <button class="settings-btn" onclick="Data.export()">
+                <div class="settings-btn-content">
+                    <div class="settings-icon">📤</div>
+                    <span>Exportovat zálohu</span>
+                </div>
+            </button>
+            <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 0 20px;"></div>
+            <button class="settings-btn" onclick="document.getElementById('file-input').click()" style="margin-bottom: 0;">
+                <div class="settings-btn-content">
+                    <div class="settings-icon">📥</div>
+                    <span>Importovat data</span>
+                </div>
+            </button>
+            <input type="file" id="file-input" accept=".json" style="display: none;" onchange="Data.import(event)">
+        </div>
+
+        <div style="height: 24px;"></div>
+        <div class="glass-panel danger-btn" style="padding: 10px;">
+            <button class="settings-btn danger-btn" onclick="UI.showDialog('hardReset')" style="margin-bottom: 0;">
+                <div class="settings-btn-content">
+                    <div class="settings-icon">🗑</div>
+                    <span>Smazat všechna data</span>
+                </div>
+            </button>
+        </div>
+        <p style="text-align: center; color: var(--text-muted); font-size: 11px; margin-top: 20px;">HabitPro Max v1.0</p>
+    </main>
+
+    <nav>
+        <div class="nav-item active" onclick="UI.switchTab('today', this)">
+            <svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+            Dnešek
+        </div>
+        <div class="nav-item" onclick="UI.switchTab('stats', this)">
+            <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+            Statistiky
+        </div>
+        <div class="nav-item" onclick="UI.switchTab('settings', this)">
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.73 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            Nastavení
+        </div>
+    </nav>
+
+    <div class="overlay" id="overlay" onclick="UI.closeSheet()"></div>
+    <div class="bottom-sheet" id="bottom-sheet">
+        <div class="sheet-handle"></div>
+        <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 24px;">Nový návyk</h2>
+        
+        <div class="form-group">
+            <label>Ikona a Název</label>
+            <div class="input-row">
+                <input type="text" id="h-icon" class="input-box" style="width: 80px; text-align: center; font-size: 24px;" value="🎯">
+                <input type="text" id="h-name" class="input-box" placeholder="Např. Cvičení" autocomplete="off">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>Denní cíl (Počet opakování)</label>
+            <input type="number" id="h-goal" class="input-box" value="1" min="1" pattern="\d*">
+        </div>
+        
+        <div class="form-group">
+            <label>Téma návyku</label>
+            <div class="color-picker" id="color-picker">
+                <div class="color-dot selected" style="background: #0a84ff; color: #0a84ff;" onclick="UI.selectColor(this, '#0a84ff')"></div>
+                <div class="color-dot" style="background: #32d74b; color: #32d74b;" onclick="UI.selectColor(this, '#32d74b')"></div>
+                <div class="color-dot" style="background: #ff9f0a; color: #ff9f0a;" onclick="UI.selectColor(this, '#ff9f0a')"></div>
+                <div class="color-dot" style="background: #ff453a; color: #ff453a;" onclick="UI.selectColor(this, '#ff453a')"></div>
+                <div class="color-dot" style="background: #bf5af2; color: #bf5af2;" onclick="UI.selectColor(this, '#bf5af2')"></div>
+                <div class="color-dot" style="background: #64d2ff; color: #64d2ff;" onclick="UI.selectColor(this, '#64d2ff')"></div>
+                <div class="color-dot" style="background: #ffd60a; color: #ffd60a;" onclick="UI.selectColor(this, '#ffd60a')"></div>
+            </div>
+        </div>
+        
+        <button class="btn-primary" onclick="Habits.create()">Vytvořit</button>
+        <div style="height: 10px;"></div>
+    </div>
+
+    <div class="overlay" id="dialog-overlay"></div>
+    <div class="custom-dialog" id="custom-dialog">
+        <h3 id="dialog-title">Title</h3>
+        <p id="dialog-msg">Message</p>
+        <div class="dialog-btns">
+            <button class="dialog-btn cancel" onclick="UI.closeDialog()">Zrušit</button>
+            <button class="dialog-btn confirm" id="dialog-confirm-btn">Potvrdit</button>
+        </div>
+    </div>
+
+    <script>
+        const Data = {
+            appData: JSON.parse(localStorage.getItem('habitProMax')) || { habits: [], history: {} },
+            selectedColor: '#0a84ff',
+            chartInstance: null,
+
+            getToday() {
+                const d = new Date();
+                return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+            },
+            
+            save() { localStorage.setItem('habitProMax', JSON.stringify(this.appData)); },
+
+            export() {
+                const blob = new Blob([JSON.stringify(this.appData)], { type: "application/json;charset=utf-8" });
+                const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `HabitPro_Max_${this.getToday()}.json`; a.click();
+            },
+
+            import(e) {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    try { 
+                        let data = JSON.parse(ev.target.result); 
+                        if(data.habits && data.history) { 
+                            this.appData = data; this.save(); Habits.renderToday(); 
+                            UI.showInfoDialog('Úspěch', 'Data byla úspěšně obnovena ze zálohy.');
+                        } else throw new Error();
+                    } catch { UI.showInfoDialog('Chyba', 'Soubor zálohy je poškozený nebo neplatný.'); }
+                };
+                reader.readAsText(file, "UTF-8");
+            },
+
+            hardReset() {
+                localStorage.removeItem('habitProMax'); location.reload();
+            }
+        };
+
+        const Habits = {
+            renderToday() {
+                const container = document.getElementById('habits-container');
+                container.innerHTML = '';
+                const today = Data.getToday();
+                if (!Data.appData.history[today]) Data.appData.history[today] = {};
+
+                if (Data.appData.habits.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align:center; margin-top: 60px; opacity: 0.7;">
+                            <div style="font-size: 60px; margin-bottom: 20px;">🪴</div>
+                            <h3 style="font-size: 20px; font-weight: 600; margin-bottom: 8px;">Žádné návyky</h3>
+                            <p style="color: var(--text-secondary); font-size: 15px;">Začni budovat svou rutinu.<br>Přidej si první návyk v Nastavení.</p>
+                        </div>`;
+                    return;
+                }
+
+                Data.appData.habits.forEach((habit, index) => {
+                    const current = Data.appData.history[today][habit.id] || 0;
+                    const isDone = current >= habit.goal;
+                    const progress = Math.min((current / habit.goal) * 100, 100);
+                    const dashoffset = 144.5 - (144.5 * progress) / 100; 
+                    
+                    let streak = 0; let checkDate = new Date();
+                    for (let i = 0; i < 365; i++) {
+                        let dStr = new Date(checkDate.getTime() - (checkDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                        if ((Data.appData.history[dStr]?.[habit.id] || 0) >= habit.goal) streak++;
+                        else if (i > 0) break;
+                        checkDate.setDate(checkDate.getDate() - 1);
+                    }
+
+                    const card = document.createElement('div');
+                    card.className = 'glass-panel habit-card';
+                    card.style.animationDelay = `${index * 0.08}s`;
+                    card.onclick = () => this.tap(habit.id);
+                    card.innerHTML = `
+                        <div class="habit-info">
+                            <div class="habit-icon-wrap" style="color: ${habit.color};">${habit.icon}</div>
+                            <div class="habit-details">
+                                <h3>${habit.name}</h3>
+                                <p>${current} / ${habit.goal} ${streak > 2 ? `<span class="streak-badge">🔥 ${streak} d.</span>` : ''}</p>
+                            </div>
+                        </div>
+                        <div class="progress-ring">
+                            <svg><circle class="bg" cx="26" cy="26" r="23"></circle>
+                                 <circle class="fg" cx="26" cy="26" r="23" style="stroke: ${isDone ? 'url(#activeGradient)' : habit.color}; stroke-dasharray: 144.5; stroke-dashoffset: ${dashoffset};"></circle>
+                            </svg>
+                            <div class="progress-icon" style="transform: translate(-50%, -50%) scale(${isDone?1:0});">${isDone ? '✓' : ''}</div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            },
+
+            tap(id) {
+                const today = Data.getToday();
+                const habit = Data.appData.habits.find(h => h.id === id);
+                let current = Data.appData.history[today][id] || 0;
+                
+                if (current < habit.goal) { 
+                    Data.appData.history[today][id]++; 
+                    if (navigator.vibrate) navigator.vibrate(40); 
+                } else { 
+                    Data.appData.history[today][id] = 0; 
+                    if (navigator.vibrate) navigator.vibrate([30, 40, 30]); 
+                }
+                Data.save(); this.renderToday();
+            },
+
+            create() {
+                const name = document.getElementById('h-name').value.trim();
+                const icon = document.getElementById('h-icon').value.trim() || '🎯';
+                const goal = parseInt(document.getElementById('h-goal').value) || 1;
+                if(!name) { UI.showInfoDialog('Chyba', 'Zadej prosím název návyku.'); return; }
+                
+                Data.appData.habits.push({ id: 'h' + Date.now(), name, icon, color: Data.selectedColor, goal });
+                Data.save(); document.getElementById('h-name').value = ''; 
+                UI.closeSheet(); UI.switchTab('today', document.querySelectorAll('.nav-item')[0]);
+            },
+
+            delete(id) {
+                Data.appData.habits = Data.appData.habits.filter(h => h.id !== id); 
+                Data.save(); 
+                UI.closeDialog();
+                UI.renderSettingsList();
+            }
+        };
+
+        const Stats = {
+            renderAll() {
+                let totalDone = 0; let perfectDays = 0;
+                const habitCount = Data.appData.habits.length;
+
+                Object.values(Data.appData.history).forEach(day => {
+                    let dayDone = 0;
+                    Data.appData.habits.forEach(h => { if(day[h.id] >= h.goal) { totalDone++; dayDone++; } });
+                    if(habitCount > 0 && dayDone === habitCount) perfectDays++;
+                });
+                
+                document.getElementById('stat-total').innerText = totalDone;
+                document.getElementById('stat-perfect').innerText = perfectDays;
+
+                this.renderChart();
+                this.renderAdvancedHeatmap();
+            },
+
+            renderChart() {
+                const ctx = document.getElementById('activityChart').getContext('2d');
+                if(Data.chartInstance) Data.chartInstance.destroy();
+
+                let labels = []; let dataArr = []; let today = new Date();
+                for(let i=13; i>=0; i--) {
+                    let d = new Date(today.getTime()); d.setDate(d.getDate() - i);
+                    let dStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                    labels.push(d.toLocaleDateString('cs-CZ', {day: 'numeric', month: 'numeric'}));
+                    
+                    let dayCount = 0;
+                    if(Data.appData.history[dStr]) {
+                        Data.appData.habits.forEach(h => { if(Data.appData.history[dStr][h.id] >= h.goal) dayCount++; });
+                    }
+                    dataArr.push(dayCount);
+                }
+
+                Chart.defaults.color = '#9ca3af';
+                Chart.defaults.font.family = '-apple-system, sans-serif';
+
+                let gradient = ctx.createLinearGradient(0, 0, 0, 260);
+                gradient.addColorStop(0, 'rgba(138, 100, 237, 1)'); 
+                gradient.addColorStop(1, 'rgba(10, 132, 255, 1)'); 
+
+                Data.chartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels, datasets: [{ data: dataArr, backgroundColor: gradient, borderRadius: 6, borderSkipped: false }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(20,20,22,0.9)', titleFont: {size: 14}, bodyFont: {size: 16, weight: 'bold'}, padding: 12, cornerRadius: 10, displayColors: false } },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45 } },
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { stepSize: 1 }, beginAtZero: true }
+                        }
+                    }
+                });
+            },
+
+            renderAdvancedHeatmap() {
+                const grid = document.getElementById('heatmap-grid');
+                const monthsContainer = document.getElementById('hm-months');
+                grid.innerHTML = ''; monthsContainer.innerHTML = '';
+                
+                const DAYS_TO_SHOW = 364;
+                let days = []; let today = new Date();
+                
+                let startDate = new Date(today.getTime());
+                startDate.setDate(today.getDate() - DAYS_TO_SHOW);
+                while(startDate.getDay() !== 1) { 
+                    startDate.setDate(startDate.getDate() - 1);
+                }
+
+                let currentMonth = -1;
+                let colIndex = 0;
+
+                while (startDate <= today) {
+                    days.push(new Date(startDate.getTime()));
+                    
+                    if (startDate.getDay() === 1) { 
+                        if (startDate.getMonth() !== currentMonth) {
+                            currentMonth = startDate.getMonth();
+                            const monthName = startDate.toLocaleDateString('cs-CZ', { month: 'short' });
+                            monthsContainer.innerHTML += `<span style="left: ${colIndex * 18}px">${monthName}</span>`;
+                        }
+                        colIndex++;
+                    }
+                    startDate.setDate(startDate.getDate() + 1);
+                }
+                
+                days.forEach(d => {
+                    let dStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                    let done = 0; let total = Data.appData.habits.length;
+                    
+                    if(Data.appData.history[dStr]) Data.appData.habits.forEach(h => { if(Data.appData.history[dStr][h.id] >= h.goal) done++; });
+                    
+                    let levelClass = '';
+                    if(total > 0 && done > 0) {
+                        let pct = done / total;
+                        if(pct === 1) levelClass = 'l4';
+                        else if(pct >= 0.66) levelClass = 'l3'; 
+                        else if(pct >= 0.33) levelClass = 'l2'; 
+                        else levelClass = 'l1';
+                    }
+                    
+                    let tooltipDate = d.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' });
+                    grid.innerHTML += `<div class="hm-cell ${levelClass}" title="${tooltipDate}: ${done}/${total} splněno"></div>`;
+                });
+
+                setTimeout(() => { const c = document.querySelector('.heatmap-wrapper'); c.scrollLeft = c.scrollWidth; }, 100);
+            }
+        };
+
+        const UI = {
+            switchTab(tab, el) {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                document.getElementById(`view-${tab}`).classList.add('active');
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                el.classList.add('active');
+                
+                const titles = { 'today': 'Dnešek', 'stats': 'Statistiky', 'settings': 'Nastavení' };
+                document.getElementById('header-title').innerText = titles[tab];
+                
+                if(tab === 'today') Habits.renderToday();
+                if(tab === 'stats') setTimeout(() => Stats.renderAll(), 10);
+                if(tab === 'settings') this.renderSettingsList();
+            },
+            
+            renderSettingsList() {
+                const list = document.getElementById('settings-habit-list');
+                list.innerHTML = '';
+                Data.appData.habits.forEach(h => {
+                    list.innerHTML += `
+                        <div class="settings-btn" style="border-bottom: 1px solid rgba(255,255,255,0.05); border-radius: 0; margin: 0; cursor: default;">
+                            <div class="settings-btn-content">
+                                <div class="settings-icon" style="background: ${h.color}20; color: ${h.color};">${h.icon}</div>
+                                <span>${h.name}</span>
+                            </div>
+                            <button onclick="UI.showDialog('deleteHabit', '${h.id}', '${h.name}')" style="background:none; border:none; color:var(--danger); font-size:22px; cursor:pointer; padding:5px;">🗑</button>
+                        </div>`;
+                });
+            },
+
+            openSheet() { 
+                document.getElementById('overlay').classList.add('active'); 
+                document.getElementById('bottom-sheet').classList.add('active'); 
+            },
+            closeSheet() { 
+                document.getElementById('overlay').classList.remove('active'); 
+                document.getElementById('bottom-sheet').classList.remove('active'); 
+            },
+            selectColor(el, color) { 
+                document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected')); 
+                el.classList.add('selected'); Data.selectedColor = color; 
+            },
+
+            showDialog(action, id = null, name = '') {
+                const overlay = document.getElementById('dialog-overlay');
+                const dialog = document.getElementById('custom-dialog');
+                const title = document.getElementById('dialog-title');
+                const msg = document.getElementById('dialog-msg');
+                const confirmBtn = document.getElementById('dialog-confirm-btn');
+
+                overlay.classList.add('active');
+                dialog.classList.add('active');
+                confirmBtn.className = 'dialog-btn confirm'; 
+
+                if (action === 'deleteHabit') {
+                    title.innerText = 'Smazat návyk?';
+                    msg.innerHTML = `Opravdu chceš smazat <strong>${name}</strong>?<br>Historie k němu zůstane uložena ve statistikách.`;
+                    confirmBtn.innerText = 'Smazat';
+                    confirmBtn.onclick = () => Habits.delete(id);
+                } else if (action === 'hardReset') {
+                    title.innerText = 'Smazat všechna data?';
+                    msg.innerHTML = 'Tato akce je <strong>nevratná</strong>.<br>Smaže všechny návyky, statistiky i historii heatmapy.';
+                    confirmBtn.innerText = 'Smazat vše';
+                    confirmBtn.onclick = () => Data.hardReset();
+                }
+            },
+            
+            showInfoDialog(titleText, msgText) {
+                const overlay = document.getElementById('dialog-overlay');
+                const dialog = document.getElementById('custom-dialog');
+                document.getElementById('dialog-title').innerText = titleText;
+                document.getElementById('dialog-msg').innerHTML = msgText;
+                
+                const confirmBtn = document.getElementById('dialog-confirm-btn');
+                confirmBtn.innerText = 'OK';
+                confirmBtn.className = 'dialog-btn confirm-blue';
+                confirmBtn.onclick = () => this.closeDialog();
+                
+                overlay.classList.add('active');
+                dialog.classList.add('active');
+            },
+
+            closeDialog() {
+                document.getElementById('dialog-overlay').classList.remove('active');
+                document.getElementById('custom-dialog').classList.remove('active');
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('current-date').innerText = new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
+            Habits.renderToday();
+            
+            document.body.addEventListener('touchmove', function(e) {
+                if (!e.target.closest('main') && !e.target.closest('.heatmap-wrapper')) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        });
+    </script>
+</body>
+</html>
